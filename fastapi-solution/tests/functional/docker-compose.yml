@@ -1,0 +1,50 @@
+version: "3.9"
+services:
+  elastic:
+    image: elasticsearch:8.7.1
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+    healthcheck:
+      test: ["CMD", "curl", "elastic:9200"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  redis:
+    image: redis:7.0
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  api:
+    build: ../../.
+    environment:
+      - ELASTIC_DSN=http://elastic:9200
+      - REDIS_DSN=redis://redis:6379
+      - REDIS_CACHE_EXPIRE_SECONDS=300
+      - LOG_LEVEL
+      - WORKERS
+    depends_on:
+      elastic:
+        condition: service_healthy
+        restart: true
+      redis:
+        condition: service_healthy
+        restart: true
+  nginx:
+    image: nginx:1.24
+    volumes:
+      - ../../nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../../nginx/conf.d:/etc/nginx/conf.d:ro
+    depends_on:
+      - api
+  tests:
+    build: .
+    environment:
+      - ELASTIC_DSN=http://elastic:9200
+      - REDIS_DSN=redis://redis:6379
+      - API_URL=http://nginx
+    entrypoint: pytest ${TESTS}
+    depends_on:
+      - nginx
